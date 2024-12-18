@@ -1,1 +1,9 @@
+# Ignore large video files
 stadium_data/*.mp4
+
+# Common Python ignores
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
