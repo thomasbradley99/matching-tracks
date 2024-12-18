@@ -1,0 +1,216 @@
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import os
+
+def list_csv_files(data_dir):
+    """List all CSV files in the data directory"""
+    # Get all CSV files in directory
+    all_csv_files = [f for f in os.listdir(data_dir) if f.endswith('.csv')]
+    
+    # Define known file properties
+    file_props = {
+        'camL_1.csv': {'color': 'blue', 'name': 'Left'},
+        'camM_1.csv': {'color': 'red', 'name': 'Middle'},
+        'camR_1.csv': {'color': 'green', 'name': 'Right'},
+        'M-1min.csv': {'color': 'purple', 'name': 'Middle (1min)'}
+    }
+    
+    print("\nAvailable CSV files:")
+    available_files = {}
+    
+    # List all CSV files with properties (use defaults for unknown files)
+    for i, filename in enumerate(sorted(all_csv_files), 1):
+        props = file_props.get(filename, {
+            'color': 'white',
+            'name': filename.replace('.csv', '')
+        })
+        print(f"{i}. {props['name']} ({filename})")
+        available_files[i] = (filename, props)
+    
+    return available_files
+
+def get_user_selection(available_files):
+    """Get user selection of CSV file"""
+    while True:
+        try:
+            choice = input("\nEnter number to visualize (Ctrl+C to exit): ")
+            choice = int(choice)
+            if choice in available_files:
+                return available_files[choice]
+            print("Invalid selection. Please try again.")
+        except ValueError:
+            print("Please enter a valid number.")
+
+def analyze_tracking_data(file_path):
+    """Load and analyze tracking data"""
+    try:
+        data = pd.read_csv(file_path)
+    except UnicodeDecodeError:
+        data = pd.read_csv(file_path, encoding='latin-1')
+    
+    # Print key statistics
+    print("\nKey Statistics:")
+    print(f"Total number of frames: {data['frame'].max() + 1}")
+    print(f"Number of unique tracking IDs: {data['tracking_id'].nunique()}")
+    print(f"Frame range: {data['frame'].min()} to {data['frame'].max()}")
+    print(f"Average track length: {len(data) / data['tracking_id'].nunique():.1f} frames")
+    print("\nTeam distribution:")
+    print(data.groupby('team_id')['tracking_id'].nunique().to_dict())
+    
+    # Quality filtering parameters
+    VELOCITY_THRESHOLD = 50
+    MIN_TRACK_LENGTH = 30
+    MAX_POSITION_JUMP = 50
+    
+    valid_track_ids = []
+    for track_id in data['tracking_id'].unique():
+        track = data[data['tracking_id'] == track_id]
+        track_length = len(track)
+        max_velocity = track['velocity'].max() if 'velocity' in data.columns else 0
+        x_jumps = abs(track['pitch_x'].diff()).max()
+        y_jumps = abs(track['pitch_y'].diff()).max()
+        
+        is_valid = (
+            track_length >= MIN_TRACK_LENGTH and
+            max_velocity <= VELOCITY_THRESHOLD and
+            x_jumps <= MAX_POSITION_JUMP and
+            y_jumps <= MAX_POSITION_JUMP
+        )
+        if is_valid:
+            valid_track_ids.append(track_id)
+    
+    return data[data['tracking_id'].isin(valid_track_ids)]
+
+def create_visualization():
+    # Get the correct data directory path
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    data_dir = os.path.join(os.path.dirname(script_dir), 'data')
+    
+    # Get list of CSV files
+    csv_files = list_csv_files(data_dir)
+    if not csv_files:
+        print("No CSV files found in data directory")
+        return None
+    
+    selected_file, props = get_user_selection(csv_files)
+    file_path = os.path.join(data_dir, selected_file)
+    print(f"\nProcessing: {file_path}")
+    
+    # Define team colors with your preferences
+    team_colors = {
+        -1: 'rgb(255, 165, 0)',    # orange for unknown
+        0: 'rgb(0, 255, 255)',     # neon blue
+        1: 'rgb(255, 255, 255)',   # white
+        2: 'rgb(0, 255, 10)',      # keeping green as was not specified
+        3: 'rgb(255, 255, 0)'      # yellow
+    }
+    
+    data = analyze_tracking_data(file_path)
+    
+    # Calculate and print statistics
+    stats_summary = {
+        "Total Tracks": data['tracking_id'].nunique(),
+        "Total Frames": data['frame'].nunique(),
+        "Frame Range": f"{data['frame'].min()}-{data['frame'].max()}",
+        "Teams": sorted(data['team_id'].unique()),
+        "Players per Team": data.groupby('team_id')['tracking_id'].nunique().to_dict()
+    }
+    
+    print("\nKey Statistics:")
+    print(f"Total number of frames: {stats_summary['Total Frames']}")
+    print(f"Number of unique tracking IDs: {stats_summary['Total Tracks']}")
+    print(f"Frame range: {data['frame'].min()} to {data['frame'].max()}")
+    print(f"Average track length: {len(data) / data['tracking_id'].nunique():.1f} frames\n")
+    print("Team distribution:")
+    print(stats_summary['Players per Team'])
+    
+    # Create figure with updated title
+    fig = make_subplots(
+        rows=2, cols=2,
+        specs=[
+            [{"type": "scene", "rowspan": 2}, {"type": "xy"}],
+            [None, {"type": "xy"}]
+        ],
+        subplot_titles=('3D Trajectories by Team', 'Track Length Distribution', 'Active Tracks'),
+        column_widths=[0.7, 0.3]
+    )
+    
+    # Plot 3D tracks by team
+    for team_id in sorted(data['team_id'].unique()):
+        team_data = data[data['team_id'] == team_id]
+        for track_id in team_data['tracking_id'].unique():
+            track_data = team_data[team_data['tracking_id'] == track_id].copy()
+            track_data = track_data.iloc[::3]  # Downsample for performance
+            
+            fig.add_trace(
+                go.Scatter3d(
+                    x=track_data['pitch_x'],
+                    y=track_data['pitch_y'],
+                    z=track_data['frame'],
+                    mode='lines',
+                    name=f"Team {team_id} - Track {track_id}",
+                    line=dict(color=team_colors.get(team_id, 'white'), width=2),
+                    opacity=0.6
+                ),
+                row=1, col=1
+            )
+    
+    # Add track length distribution by team
+    for team_id in sorted(data['team_id'].unique()):
+        team_data = data[data['team_id'] == team_id]
+        track_lengths = team_data.groupby('tracking_id').size()
+        fig.add_trace(
+            go.Histogram(
+                x=track_lengths,
+                name=f'Team {team_id} Lengths',
+                opacity=0.7,
+                marker_color=team_colors.get(team_id, 'white')
+            ),
+            row=1, col=2
+        )
+    
+    # Add active tracks over time by team
+    for team_id in sorted(data['team_id'].unique()):
+        team_data = data[data['team_id'] == team_id]
+        active_tracks = team_data.groupby('frame')['tracking_id'].nunique()
+        fig.add_trace(
+            go.Scatter(
+                x=active_tracks.index,
+                y=active_tracks.values,
+                name=f'Team {team_id} Active',
+                line=dict(color=team_colors.get(team_id, 'white'))
+            ),
+            row=2, col=2
+        )
+    
+    # Update layout with new title
+    fig.update_layout(
+        height=1000,
+        width=1500,
+        title=f"Analysis of {props['name']} Camera<br><span style='font-size: 12px;'>Total Tracks: {stats_summary['Total Tracks']} | Frames: {stats_summary['Frame Range']}<br>Team Distribution:<br>",
+        showlegend=True,
+        paper_bgcolor='black',
+        plot_bgcolor='black',
+        font=dict(color='white')
+    )
+    
+    fig.update_scenes(
+        bgcolor='black',
+        xaxis=dict(title='X', gridcolor='gray', showbackground=False),
+        yaxis=dict(title='Y', gridcolor='gray', showbackground=False),
+        zaxis=dict(title='Frame', gridcolor='gray', showbackground=False),
+        camera=dict(
+            up=dict(x=0, y=0, z=1),
+            center=dict(x=0, y=0, z=0),
+            eye=dict(x=1.5, y=1.5, z=1.5)
+        )
+    )
+    
+    return fig
+
+if __name__ == "__main__":
+    fig = create_visualization()
+    if fig:
+        print("\nOpening visualization in browser...")
+        fig.show() 

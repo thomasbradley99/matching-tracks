@@ -47,10 +47,14 @@ def analyze_tracking_data(file_path, color):
     return data[data['tracking_id'].isin(valid_track_ids)]
 
 def create_visualization():
+    # Get the correct data directory path
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(current_dir)), 'data')
+    
     data_files = [
-        "../data/camL_1.csv",
-        "../data/camM_1.csv",
-        "../data/camR_1.csv"
+        os.path.join(data_dir, 'camL_1.csv'),
+        os.path.join(data_dir, 'camM_1.csv'),
+        os.path.join(data_dir, 'camR_1.csv')
     ]
     
     # Create figure

@@ -1,5 +1,8 @@
 # Track Matching Challenge
 
+run  python3 scripts/interactive_explorer.py
+from root dir to see what is going on 
+
 ## Data Description
 The data represents 2D positions of football players tracked on a pitch, with 3rd dimension of time in the game.
 

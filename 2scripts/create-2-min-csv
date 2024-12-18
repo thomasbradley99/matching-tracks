@@ -1,0 +1,89 @@
+import pandas as pd
+import os
+
+def list_csv_files(data_dir):
+    """List all CSV files in the data directory with colors"""
+    csv_files = {
+        'camL_1.csv': {'name': 'Left'},
+        'camM_1.csv': {'name': 'Middle'},
+        'camR_1.csv': {'name': 'Right'}
+    }
+    
+    print("\nAvailable CSV files:")
+    available_files = {}
+    for i, (filename, props) in enumerate(csv_files.items(), 1):
+        if os.path.exists(os.path.join(data_dir, filename)):
+            print(f"{i}. {props['name']} Camera ({filename})")
+            available_files[i] = (filename, props)
+    return available_files
+
+def get_user_selection(available_files):
+    while True:
+        try:
+            choice = int(input("\nEnter number to create 1-min version (Ctrl+C to exit): "))
+            if choice in available_files:
+                return available_files[choice]
+            print("Invalid selection. Please try again.")
+        except ValueError:
+            print("Please enter a number.")
+
+def create_one_minute_version(input_file, output_file):
+    # Calculate frames per second
+    TOTAL_SECONDS = (48 * 60) + 37  # = 2917 seconds
+    data = pd.read_csv(input_file)
+    TOTAL_FRAMES = data['frame'].max() + 1
+    FPS = TOTAL_FRAMES / TOTAL_SECONDS
+
+    # Calculate frames for 1 minute
+    FRAMES_PER_MINUTE = FPS * 60
+    ONE_MINUTE_FRAMES = int(FRAMES_PER_MINUTE)
+
+    # Filter first minute of data
+    first_min = data[data['frame'] < ONE_MINUTE_FRAMES].copy()
+
+    # Add timestamp column (in seconds)
+    first_min['timestamp'] = first_min['frame'] / FPS
+
+    # Format timestamp as MM:SS.mmm
+    first_min['timestamp_str'] = first_min['timestamp'].apply(
+        lambda x: f"{int(x//60):02d}:{x%60:06.3f}"
+    )
+
+    # Save to new CSV
+    first_min.to_csv(output_file, index=False)
+    
+    return {
+        'fps': FPS,
+        'frames': ONE_MINUTE_FRAMES,
+        'rows': len(first_min)
+    }
+
+if __name__ == "__main__":
+    # Get the correct data directory path
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    data_dir = os.path.join(os.path.dirname(script_dir), 'data')
+
+    # Get list of CSV files and user selection
+    csv_files = list_csv_files(data_dir)
+    if not csv_files:
+        print("No CSV files found in data directory")
+        exit(1)
+
+    selected_file, props = get_user_selection(csv_files)
+    
+    # Setup input and output paths
+    input_file = os.path.join(data_dir, selected_file)
+    output_name = f"{selected_file.split('_')[0]}-1min.csv"
+    output_file = os.path.join(data_dir, output_name)
+
+    print(f"\nProcessing: {selected_file}")
+    print(f"Creating: {output_name}")
+    
+    # Create the 1-minute version
+    stats = create_one_minute_version(input_file, output_file)
+    
+    # Print statistics
+    print(f"\nCreated {output_name}")
+    print(f"Frame rate: {stats['fps']:.2f} fps")
+    print(f"Frames in 1 minute: {stats['frames']}")
+    print(f"Rows in output: {stats['rows']}") 

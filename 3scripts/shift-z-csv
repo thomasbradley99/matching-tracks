@@ -1,0 +1,44 @@
+from flask import Flask, render_template_string
+import pandas as pd
+import os
+
+app = Flask(__name__)
+
+def analyze_csv(file_path):
+    data = pd.read_csv(file_path)
+    total_entries = len(data)
+    unique_tracks = data['tracking_id'].nunique()
+    total_frames = data['frame'].nunique()
+    teams = sorted(data['team_id'].unique())
+    
+    return {
+        "file_name": os.path.basename(file_path),
+        "total_entries": total_entries,
+        "unique_tracks": unique_tracks,
+        "total_frames": total_frames,
+        "teams": teams
+    }
+
+@app.route('/')
+def index():
+    data_dir = '../stadium_data'
+    files = ['camL_1.csv', 'camM_1.csv', 'camR_1.csv']
+    analyses = [analyze_csv(os.path.join(data_dir, file)) for file in files]
+    
+    html = """
+    <h1>CSV Analysis</h1>
+    {% for analysis in analyses %}
+        <h2>{{ analysis.file_name }}</h2>
+        <ul>
+            <li>Total Entries: {{ analysis.total_entries }}</li>
+            <li>Unique Tracks: {{ analysis.unique_tracks }}</li>
+            <li>Total Frames: {{ analysis.total_frames }}</li>
+            <li>Teams: {{ analysis.teams }}</li>
+        </ul>
+    {% endfor %}
+    """
+    
+    return render_template_string(html, analyses=analyses)
+
+if __name__ == '__main__':
+    app.run(debug=True)
